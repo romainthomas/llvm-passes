@@ -1,7 +1,8 @@
 //Compile : cmake -DLLVM_ROOT=$HOME/Documents/Programmation/Obfuscation/llvm/build ..
+
 #include <map>
 #include <utility> //std::pair, std::make_pair
-
+#include <random>
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
@@ -29,6 +30,9 @@ namespace {
   typedef ValueMap<Value*,typeMapValue> typeMap;
   
   class ObfuscateVar : public BasicBlockPass {
+
+    std::default_random_engine Generator; //private
+    
   public:
   
     static char ID;
@@ -38,15 +42,17 @@ namespace {
       /* 
          From https://www.cs.ox.ac.uk/files/2936/RR-10-02.pdf:
          Given a variable X, we split it such as
-         - A = X%10
-         - B = X//10
+         - A = X%N
+         - B = X//N
        
          Z=X+Y will be transformed into :
-         - Z_A = (X_A+Y_A) mod 10
-         - Z_B = { 10*(X_B+Y_B)+(X_A+Y_A) } div 10
+         - Z_A = (X_A+Y_A) mod N
+         - Z_B = { 10*(X_B+Y_B)+(X_A+Y_A) } div N
 
          To rebuild the variable : 
-         X = 10*X_B+X_A
+         X = N*X_B+X_A
+
+         Where N is a random integer different from 0 and 1
 
       */
     
@@ -75,11 +81,9 @@ namespace {
             //Get the operator's operands
             Value *op0 = parseOperand(Binop->getOperand(0));
             Value *op1 = parseOperand(Binop->getOperand(1));
-           
-            if(!(isSplited(op0) && isSplited(op1))){//Check if the two operands are splited. It should be ok due to the previous loop
-              dbgs() << "Error : operands aren't splited !\n";
-              break;
-            }
+
+            assert(isSplited(op0) && isSplited(op1)); //Check if the two operands are splited. It should be ok due to the previous loop
+            
            
             switch(Binop->getOpcode()){
               
@@ -93,7 +97,8 @@ namespace {
               Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
               
               // Get X_A and X_B from the first operand
-              typeMap::iterator it=varsRegister.find(op0); 
+              typeMap::iterator it=varsRegister.find(op0);
+              assert(it!=varsRegister.end());
               
               Value *op0_A = Builder.CreateLoad(it->second.first,isVolatile);
               Value *op0_B = Builder.CreateLoad(it->second.second,isVolatile);
@@ -172,15 +177,10 @@ namespace {
             }
           }else{
             //TODO : return
-            
-            
           
           }
         }
 
-      
-
-      
       }
 
 
@@ -221,7 +221,7 @@ namespace {
      * Check if the instruction Inst is valid to be splited
      */
     bool isValidInstForSplit(Instruction &Inst) {
-      dbgs() << Inst.getOpcode() << "\n";
+      
       switch(Inst.getOpcode()){
         
       case Instruction::Add:
