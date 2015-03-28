@@ -41,7 +41,7 @@ namespace {
          - A = X%10
          - B = X//10
        
-         Z=X+Y will be transform into :
+         Z=X+Y will be transformed into :
          - Z_A = (X_A+Y_A) mod 10
          - Z_B = { 10*(X_B+Y_B)+(X_A+Y_A) } div 10
 
@@ -54,9 +54,9 @@ namespace {
       
         Instruction &Inst = *I;
         bool isVolatile = false;
-      
-        if(isValidInstForSplit(Inst)) {//Check if the instruction can be splited
         
+        if(isValidInstForSplit(Inst)) {//Check if the instruction can be splited
+          
           for (size_t i=0; i < Inst.getNumOperands(); ++i) {
             if (Value *V = isValidCandidateOperand(Inst.getOperand(i))) {
 
@@ -221,8 +221,12 @@ namespace {
      * Check if the instruction Inst is valid to be splited
      */
     bool isValidInstForSplit(Instruction &Inst) {
+      dbgs() << Inst.getOpcode() << "\n";
       switch(Inst.getOpcode()){
+        
       case Instruction::Add:
+        return true;
+        break;
       case Instruction::Sub:
         return true;
         break;
