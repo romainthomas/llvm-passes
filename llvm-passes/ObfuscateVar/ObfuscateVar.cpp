@@ -100,13 +100,13 @@ namespace {
               typeMap::iterator it=varsRegister.find(op0);
               assert(it!=varsRegister.end());
               
-              Value *op0_A = Builder.CreateLoad(it->second.first,isVolatile);
-              Value *op0_B = Builder.CreateLoad(it->second.second,isVolatile);
+              Value *op0_A = it->second.first;
+              Value *op0_B = it->second.second;
 
               // Get Y_A and Y_B from the second operand
               it=varsRegister.find(op1);
-              Value *op1_A = Builder.CreateLoad(it->second.first,isVolatile);
-              Value *op1_B = Builder.CreateLoad(it->second.second,isVolatile);
+              Value *op1_A = it->second.first;
+              Value *op1_B = it->second.second;
 
               
               Value* AddA0A1 = Builder.CreateAdd(op0_A,op1_A);//X_A+Y_A
@@ -121,20 +121,20 @@ namespace {
               Value* DivAB = Builder.CreateUDiv(AddAB,C10,"Z_B"); //{ 10*(X_B+Y_B)+[X_A+Y_A] } div 10 => Z_B
 
               //Allocate two register to store the splited result
-              Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
-              Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
+              // Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
+              // Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
 
-              Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
-              Builder.CreateStore(DivAB,alloResultB,isVolatile);
+              // Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
+              // Builder.CreateStore(DivAB,alloResultB,isVolatile);
  
-              Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
+              // Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
 
               // the key to access to the variables Z_A and Z_B from the ValueMap is Z_A.
               // It's a convention and we could choose Z_B
-              varsRegister[parseOperand(LoadResultA)] = std::make_pair(alloResultA,alloResultB);
+              varsRegister[parseOperand(RemA0A1)] = std::make_pair(RemA0A1,DivAB);
 
               // We replace all uses of the add result with the register that contains Z_A
-              Inst.replaceAllUsesWith(LoadResultA);
+              Inst.replaceAllUsesWith(RemA0A1);
               
               //Inst.eraseFromParent();
               // for (User *U : Inst.users()) {
@@ -203,8 +203,8 @@ namespace {
         IRBuilder<> Builder(&Inst);
         //dbgs() << "We should merge : " << *op << "\n";
         //Get X_A X_B
-        Value *A = Builder.CreateLoad(it->second.first);
-        Value *B = Builder.CreateLoad(it->second.second);
+        Value *A = it->second.first;
+        Value *B = it->second.second;
         
         Value* M10B = Builder.CreateMul(B,C10);//10*B
         Value* res = Builder.CreateAdd(M10B,A,"add_final");//10*B+A
@@ -336,7 +336,7 @@ namespace {
       Value* mapKey = parseOperand(V); //Clean the value
 
       // Register X_A and X_B associated with V
-      varsRegister[mapKey] = std::make_pair(alloA,alloB);
+      varsRegister[mapKey] = std::make_pair(ARem,BDiv);
       
       dbgs() << "We splited : " << *mapKey << "\n";
 
