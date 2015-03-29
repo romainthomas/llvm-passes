@@ -26,7 +26,8 @@ using namespace llvm;
 
 namespace {
   typedef uint32_t typeInter;
-  typedef std::pair<Value*,Value*> typeMapValue;
+  //typedef std::pair<Value*,Value*> typeMapValue;
+  typedef Value* typeMapValue;
   typedef ValueMap<Value*,typeMapValue> typeMap;
   
   class ObfuscateVar : public BasicBlockPass {
@@ -92,46 +93,47 @@ namespace {
               dbgs() << "Split ADD instruction\n";
               
               IRBuilder<> Builder(&Inst);
-              Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
-    
-              Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
-              
+                  
+                           
               // Get X_A and X_B from the first operand
-              typeMap::iterator it=varsRegister.find(op0);
-              assert(it!=varsRegister.end());
-              
-              Value *op0_A = it->second.first;
-              Value *op0_B = it->second.second;
+              typeMap::iterator it=varsRegister_rem.find(op0);
+              assert(it!=varsRegister_rem.end());
+         
+              Instruction *op0_A = cast<Instruction>(it->second);
+              Constant *C = cast<Constant>(op0_A->getOperand(1));
+
+              it=varsRegister_quo.find(op0);
+              assert(it!=varsRegister_quo.end());
+      
+              Value *op0_B = it->second;
 
               // Get Y_A and Y_B from the second operand
-              it=varsRegister.find(op1);
-              Value *op1_A = it->second.first;
-              Value *op1_B = it->second.second;
+              it=varsRegister_rem.find(op1);
+              assert(it!=varsRegister_rem.end());
+              
+              Value *op1_A = it->second;
+
+              it=varsRegister_quo.find(op1);
+              assert(it!=varsRegister_quo.end());
+              Value *op1_B = it->second;
 
               
               Value* AddA0A1 = Builder.CreateAdd(op0_A,op1_A);//X_A+Y_A
               Value* AddB0B1 = Builder.CreateAdd(op0_B,op1_B);//X_B+Y_B
               
-              Value* RemA0A1 = Builder.CreateURem(AddA0A1,C10,"Z_A");//X_A+Y_A mod 10 => Z_A
+              Value* RemA0A1 = Builder.CreateURem(AddA0A1,C,"Z_A");//X_A+Y_A mod 10 => Z_A
 
-              Value* MulB0B1 = Builder.CreateMul(AddB0B1,C10);//10*(X_B+Y_B)
+              Value* MulB0B1 = Builder.CreateMul(AddB0B1,C);//10*(X_B+Y_B)
               
               Value* AddAB = Builder.CreateAdd(MulB0B1,AddA0A1);//10*(X_B+Y_B)+[X_A+Y_A]
 
-              Value* DivAB = Builder.CreateUDiv(AddAB,C10,"Z_B"); //{ 10*(X_B+Y_B)+[X_A+Y_A] } div 10 => Z_B
-
-              //Allocate two register to store the splited result
-              // Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
-              // Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
-
-              // Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
-              // Builder.CreateStore(DivAB,alloResultB,isVolatile);
- 
-              // Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
+              Value* DivAB = Builder.CreateUDiv(AddAB,C,"Z_B"); //{ 10*(X_B+Y_B)+[X_A+Y_A] } div 10 => Z_B
 
               // the key to access to the variables Z_A and Z_B from the ValueMap is Z_A.
               // It's a convention and we could choose Z_B
-              varsRegister[parseOperand(RemA0A1)] = std::make_pair(RemA0A1,DivAB);
+              varsRegister_rem[parseOperand(RemA0A1)] = RemA0A1;
+              varsRegister_quo[parseOperand(RemA0A1)] = DivAB;  
+              //varsRegister[parseOperand(RemA0A1)] = std::make_pair(RemA0A1,DivAB);
 
               // We replace all uses of the add result with the register that contains Z_A
               Inst.replaceAllUsesWith(RemA0A1);
@@ -166,7 +168,7 @@ namespace {
             
             Value *op = parseOperand(Inst.getOperand(0));//Get the source
             
-            if((it=varsRegister.find(op)) != varsRegister.end()){//Check if it's splited
+            if((it=varsRegister_rem.find(op)) != varsRegister_rem.end()){//Check if it's splited
               dbgs() << "We should merge : " << *op << "\n";
               
               if(Value *VReplace = mergeVariable(op,Inst)){//Merge the variable
@@ -196,17 +198,21 @@ namespace {
       typeMap::iterator it;
       Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
     
-      Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
+      //Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
 
-      if((it=varsRegister.find(Var)) != varsRegister.end()){// Check if the variable is splited
+      if((it=varsRegister_rem.find(Var)) != varsRegister_rem.end()){// Check if the variable is splited
         
         IRBuilder<> Builder(&Inst);
         //dbgs() << "We should merge : " << *op << "\n";
         //Get X_A X_B
-        Value *A = it->second.first;
-        Value *B = it->second.second;
+        Instruction *A = cast<Instruction>(it->second);
+        it=varsRegister_quo.find(Var);
+        assert(it!=varsRegister_quo.end());
+        Value *B = it->second;
         
-        Value* M10B = Builder.CreateMul(B,C10);//10*B
+        Constant *C = cast<Constant>(A->getOperand(1));
+        
+        Value* M10B = Builder.CreateMul(B,C);//10*B
         Value* res = Builder.CreateAdd(M10B,A,"add_final");//10*B+A
         return res; 
       
@@ -298,7 +304,7 @@ namespace {
 
     //Return true if the value is splited else false
     bool isSplited(Value* V){
-      return varsRegister.count(V) == 1;
+      return varsRegister_rem.count(V) == 1;
     }
 
     /*
@@ -310,7 +316,7 @@ namespace {
       
       Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
     
-      Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
+      Constant *C10 = ConstantInt::get(IntermediaryType,9,false);
       
       IRBuilder<> Builder(&Inst);
 
@@ -336,7 +342,9 @@ namespace {
       Value* mapKey = parseOperand(V); //Clean the value
 
       // Register X_A and X_B associated with V
-      varsRegister[mapKey] = std::make_pair(ARem,BDiv);
+      //varsRegister_rem[mapKey] = std::make_pair(ARem,BDiv);
+      varsRegister_rem[mapKey] = ARem;
+      varsRegister_quo[mapKey] = BDiv;      
       
       dbgs() << "We splited : " << *mapKey << "\n";
 
@@ -349,7 +357,8 @@ namespace {
     /*
      * Attributes
      */
-    typeMap varsRegister; //Adresse , (A,B)
+    typeMap varsRegister_rem; //Adresse , (A,B)
+    typeMap varsRegister_quo; //Adresse , (A,B)
     //Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
   
   };
